@@ -1,38 +1,49 @@
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "visashop",
-	"main": "worker/index.ts",
-	"compatibility_date": "2026-05-14",
-	"assets": {
-		"not_found_handling": "single-page-application"
-	},
-	"observability": {
-		"enabled": true
-	},
-	"upload_source_maps": true,
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
-	"placement": {
-    "mode": "smart",
+  "name": "visashop",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-05-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
   },
+  "observability": { "enabled": true },
+  "upload_source_maps": true,
+  "placement": { "mode": "smart" },
+
+  "vars": {
+    "APP_NAME": "VisaShop",
+    "APP_DESCRIPTION": "Premium digital products: license keys, subscriptions, scripts and tools",
+    "APP_URL": "https://visashop.example.com",
+    "APP_CURRENCY": "USD",
+    "APIRONE_BASE_URL": "https://apirone.com/api",
+    "APIRONE_TICKER_DEFAULT": "btc",
+    "APIRONE_REQUIRED_CONFIRMATIONS": "1",
+    "R2_PUBLIC_BASE": "",
+    "R2_ACCOUNT_ID": "",
+    "R2_BUCKET_NAME": "visashop-files",
+    "MAIL_FROM": "VisaShop <noreply@example.com>",
+    "MAIL_REPLY_TO": "support@example.com"
+  },
+
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "prod-d1-tutorial",
-      "database_id": "<unique-ID-for-your-database>"
+      "database_name": "visashop_db",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "drizzle/migrations"
     }
   ],
   "r2_buckets": [
     {
       "binding": "BUCKET",
-      "bucket_name": "my-bucket"
+      "bucket_name": "visashop-files"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "<BINDING_ID>"
+      "id": "00000000000000000000000000000000"
     }
   ]
 }

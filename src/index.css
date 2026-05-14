@@ -1,111 +1,157 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@import "tailwindcss";
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/*
+ *  VisaShop design tokens.
+ *
+ *  Tailwind v4 picks up CSS variables defined inside @theme so we can
+ *  use them as utility classes (e.g. `bg-bg`, `text-fg`, `bg-accent`).
+ *  Light + dark themes are derived from a single accent so the brand
+ *  stays consistent and tweakable from one place.
+ */
+@theme {
+  --color-bg: oklch(99% 0.005 305);
+  --color-fg: oklch(20% 0.02 305);
+  --color-muted: oklch(48% 0.02 305);
+  --color-card: oklch(100% 0 0);
+  --color-border: oklch(91% 0.01 305);
+  --color-accent: oklch(58% 0.22 296);
+  --color-accent-fg: oklch(99% 0 0);
+  --color-accent-soft: oklch(96% 0.04 296);
+  --color-success: oklch(60% 0.18 155);
+  --color-warning: oklch(72% 0.18 75);
+  --color-danger: oklch(58% 0.23 27);
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.04);
+  --radius-card: 14px;
 }
 
+/* Switch tokens for dark mode without forking the theme. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+    --color-bg: oklch(15% 0.01 305);
+    --color-fg: oklch(96% 0.005 305);
+    --color-muted: oklch(70% 0.02 305);
+    --color-card: oklch(19% 0.012 305);
+    --color-border: oklch(28% 0.015 305);
+    --color-accent: oklch(70% 0.2 296);
+    --color-accent-fg: oklch(15% 0.01 305);
+    --color-accent-soft: oklch(28% 0.05 296);
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.4);
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+html, body, #root {
+  min-height: 100%;
+}
+html {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  color-scheme: light dark;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  margin: 0;
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
   border-radius: 4px;
-  color: var(--text-h);
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+/* Reusable atoms — kept tiny so we mostly compose with Tailwind. */
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  border-radius: 10px;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+  transition: filter 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  white-space: nowrap;
 }
+.btn-primary:hover { filter: brightness(0.95); }
+.btn-primary:active { transform: translateY(1px); }
+.btn-primary[disabled],
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+}
+
+.btn-secondary {
+  background: var(--color-card);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.55rem 1rem;
+  font-weight: 500;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+.btn-secondary:hover { border-color: var(--color-accent); }
+
+.input {
+  background: var(--color-card);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.6rem 0.85rem;
+  width: 100%;
+  font: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.input::placeholder { color: var(--color-muted); opacity: 0.7; }
+
+.card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+input, select, textarea, button { color: inherit; }
+img { max-width: 100%; height: auto; display: block; }
+
+/* Subtle chrome scrollbar so admin tables stay readable in dark mode. */
+@media (prefers-color-scheme: dark) {
+  * { scrollbar-color: oklch(40% 0.02 305) transparent; }
+}
+
+@keyframes vsp-spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: vsp-spin 0.7s linear infinite;
+}
+
+@keyframes vsp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.skeleton { animation: vsp-pulse 1.6s ease-in-out infinite; }

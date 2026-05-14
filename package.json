@@ -1,7 +1,7 @@
 {
   "name": "visashop",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,12 @@
     "lint": "eslint .",
     "preview": "npm run build && vite preview",
     "deploy": "npm run cf-typegen && npm run build && wrangler deploy",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply visashop_db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply visashop_db --remote",
+    "db:seed:local": "wrangler d1 execute visashop_db --local --file=./drizzle/seed.sql",
+    "db:seed:remote": "wrangler d1 execute visashop_db --remote --file=./drizzle/seed.sql"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1046.0",
