@@ -1,22 +1,23 @@
 /**
- *  Order lifecycle workflow.
+ * Order lifecycle workflow.
  *
- *  Each order spawns one instance, with the orderId as the instance id.
- *  The workflow owns every long-running side-effect that used to live in
- *  `ctx.waitUntil()` calls (best-effort, no retries) or in periodic
- *  housekeeping passes:
+ * Each order spawns one instance, with the orderId as the instance id.
+ * The workflow owns every long-running side-effect that used to live in
+ * `ctx.waitUntil()` calls (best-effort, no retries) or in periodic
+ * housekeeping passes:
  *
- *    1. Send "payment instructions" email
- *    2. Wait for the `payment-confirmed` event (or expire on timeout)
- *    3. Assign license keys / mint download URLs (atomic, idempotent)
- *    4. Send the delivery email (with retries)
- *    5. Bump per-product sales counters & write the audit log
+ * 1. Send "payment instructions" email
+ * 2. Wait for the `payment-confirmed` event (or expire on timeout)
+ * 3. Assign license keys / mint download URLs (atomic, idempotent)
+ * 4. Send the delivery email (with retries)
+ * 5. Bump per-product sales counters & write the audit log
  *
- *  Steps are designed to be safe to re-run: each one re-checks the
- *  database state before mutating, so a partial workflow can be
- *  restarted without producing duplicate keys, double emails, etc.
+ * Steps are designed to be safe to re-run: each one re-checks the
+ * database state before mutating, so a partial workflow can be
+ * restarted without producing duplicate keys, double emails, etc.
  */
-import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, NonRetryableError } from 'cloudflare:workers';
+import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
+import { NonRetryableError } from 'cloudflare:workflows';
 import { and, eq } from 'drizzle-orm';
 import type { AppEnv, OrderWorkflowParams, PaymentConfirmedEvent } from '../env';
 import { getDb, schema } from '../db/client';
@@ -27,14 +28,14 @@ import { randomId, signToken } from '../lib/crypto';
 
 /** Default retry policy reused across most steps. */
 const RETRY = {
-  retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' as const },
-  timeout: '1 minute',
+  retries: { limit: 5, delay: '5 seconds' as const, backoff: 'exponential' as const },
+  timeout: '1 minute' as const,
 };
 
 /** Mail steps allow more retries because external delivery is flaky. */
 const MAIL_RETRY = {
-  retries: { limit: 8, delay: '10 seconds', backoff: 'exponential' as const },
-  timeout: '30 seconds',
+  retries: { limit: 8, delay: '10 seconds' as const, backoff: 'exponential' as const },
+  timeout: '30 seconds' as const,
 };
 
 interface DeliveredItem {
@@ -50,7 +51,7 @@ export class OrderLifecycleWorkflow extends WorkflowEntrypoint<AppEnv, OrderWork
 
     /* -------------------------------------------------------------- *
      * 1. Load the order snapshot (so the rest of the steps work from
-     *    a stable view of the data).
+     * a stable view of the data).
      * -------------------------------------------------------------- */
     const snapshot = await step.do('load-order', RETRY, async () => {
       const db = getDb(this.env);
@@ -77,7 +78,7 @@ export class OrderLifecycleWorkflow extends WorkflowEntrypoint<AppEnv, OrderWork
 
     /* -------------------------------------------------------------- *
      * 2. Send payment instructions. Includes a public order token so
-     *    the recipient can poll status without a session.
+     * the recipient can poll status without a session.
      * -------------------------------------------------------------- */
     await step.do('send-payment-instructions', MAIL_RETRY, async () => {
       if (!snapshot.cryptoAddress || !snapshot.cryptoCurrency || !snapshot.cryptoAmount) {
@@ -114,11 +115,11 @@ export class OrderLifecycleWorkflow extends WorkflowEntrypoint<AppEnv, OrderWork
 
     /* -------------------------------------------------------------- *
      * 3. Wait for payment. Apirone's webhook calls our worker, which
-     *    forwards a `payment-confirmed` event into this instance.
+     * forwards a `payment-confirmed` event into this instance.
      *
-     *    If the deadline passes we mark the order expired and stop.
+     * If the deadline passes we mark the order expired and stop.
      * -------------------------------------------------------------- */
-    const timeout = this.env.ORDER_PAYMENT_TIMEOUT || '1 hour';
+    const timeout = (this.env.ORDER_PAYMENT_TIMEOUT || '1 hour') as "1 hour";
     let payment: PaymentConfirmedEvent | null = null;
     try {
       const evt = await step.waitForEvent<PaymentConfirmedEvent>('wait-for-payment', {
@@ -148,10 +149,10 @@ export class OrderLifecycleWorkflow extends WorkflowEntrypoint<AppEnv, OrderWork
 
     /* -------------------------------------------------------------- *
      * 4. Atomically transition to 'paid' so concurrent webhook deliveries
-     *    or admin actions do not double-fulfil. We compute the BigInt
-     *    "max(received, payment.receivedMinor)" in JS rather than in
-     *    SQL because SQLite's INTEGER caps at 64 bits, which overflows
-     *    for 18-decimal ERC-20 / ETH amounts.
+     * or admin actions do not double-fulfil. We compute the BigInt
+     * "max(received, payment.receivedMinor)" in JS rather than in
+     * SQL because SQLite's INTEGER caps at 64 bits, which overflows
+     * for 18-decimal ERC-20 / ETH amounts.
      * -------------------------------------------------------------- */
     await step.do('mark-paid', RETRY, async () => {
       const db = getDb(this.env);
@@ -185,7 +186,7 @@ export class OrderLifecycleWorkflow extends WorkflowEntrypoint<AppEnv, OrderWork
 
     /* -------------------------------------------------------------- *
      * 5. Per-item assignment. Each item is its own step so retries
-     *    don't redo the parts that already succeeded.
+     * don't redo the parts that already succeeded.
      * -------------------------------------------------------------- */
     const itemIds = await step.do('list-items', RETRY, async () => {
       const db = getDb(this.env);
@@ -287,7 +288,7 @@ export class OrderLifecycleWorkflow extends WorkflowEntrypoint<AppEnv, OrderWork
 
     /* -------------------------------------------------------------- *
      * 6. If any item is back-ordered, mark the order paid (so admin sees
-     *    it) and bail without sending the delivery email yet.
+     * it) and bail without sending the delivery email yet.
      * -------------------------------------------------------------- */
     if (stockMisses.length > 0) {
       await step.do('flag-stock-shortage', RETRY, async () => {
@@ -335,7 +336,7 @@ export class OrderLifecycleWorkflow extends WorkflowEntrypoint<AppEnv, OrderWork
         action: 'order.fulfilled',
         entityType: 'order',
         entityId: orderId,
-        metadata: JSON.stringify({ items: delivered.length, txHash: payment.txHash }),
+        metadata: JSON.stringify({ items: delivered.length, txHash: payment?.txHash ?? null }),
       });
     });
 
@@ -356,9 +357,9 @@ export class OrderLifecycleWorkflow extends WorkflowEntrypoint<AppEnv, OrderWork
 
     /* -------------------------------------------------------------- *
      * 8. Catalog cache bust so freshly-decremented stock is reflected
-     *    on the storefront.
+     * on the storefront.
      * -------------------------------------------------------------- */
-    await step.do('bust-catalog-cache', { ...RETRY, retries: { limit: 2, delay: '2 seconds' } }, async () => {
+    await step.do('bust-catalog-cache', { ...RETRY, retries: { limit: 2, delay: '2 seconds' as const, backoff: 'exponential' as const } }, async () => {
       const v = await this.env.KV.get('catalog:version');
       const next = String((Number(v) || 0) + 1);
       await this.env.KV.put('catalog:version', next);
