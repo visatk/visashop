@@ -1,11 +1,11 @@
 /**
- *  Server-side SEO injection.
+ * Server-side SEO injection.
  *
- *  We let Cloudflare assets serve the raw `index.html` as the SPA shell,
- *  but for product / category / homepage routes we transparently
- *  intercept the response and rewrite the <head> with route-aware
- *  meta tags and JSON-LD. This satisfies search-engine crawlers
- *  without sacrificing the SPA experience for users.
+ * We let Cloudflare assets serve the raw `index.html` as the SPA shell,
+ * but for product / category / homepage routes we transparently
+ * intercept the response and rewrite the <head> with route-aware
+ * meta tags and JSON-LD. This satisfies search-engine crawlers
+ * without sacrificing the SPA experience for users.
  */
 import type { AppEnv } from '../env';
 
@@ -75,9 +75,9 @@ export function renderHeadTags(meta: SeoMeta, env: AppEnv): string {
 }
 
 /**
- *  Stream-safe head rewrite using HTMLRewriter — clears existing
- *  <title>/<meta>/<link rel="canonical">/<script type=ld> in <head>
- *  and prepends our SEO block at the top.
+ * Stream-safe head rewrite using HTMLRewriter — clears existing
+ * <title>/<meta>/<link rel="canonical">/<script type=ld> in <head>
+ * and prepends our SEO block at the top.
  */
 export function injectSeo(response: Response, meta: SeoMeta, env: AppEnv): Response {
   if (!response.headers.get('Content-Type')?.includes('text/html')) return response;
@@ -85,12 +85,12 @@ export function injectSeo(response: Response, meta: SeoMeta, env: AppEnv): Respo
   if (!response.body) return response;
   const headFrag = renderHeadTags(meta, env);
   const rewriter = new HTMLRewriter()
-    .on('head > title', { element: (el) => el.remove() })
-    .on('head > meta[name="description"]', { element: (el) => el.remove() })
-    .on('head > meta[property^="og:"]', { element: (el) => el.remove() })
-    .on('head > meta[name^="twitter:"]', { element: (el) => el.remove() })
-    .on('head > link[rel="canonical"]', { element: (el) => el.remove() })
-    .on('head > script[type="application/ld+json"]', { element: (el) => el.remove() })
+    .on('head > title', { element: (el) => { el.remove(); } })
+    .on('head > meta[name="description"]', { element: (el) => { el.remove(); } })
+    .on('head > meta[property^="og:"]', { element: (el) => { el.remove(); } })
+    .on('head > meta[name^="twitter:"]', { element: (el) => { el.remove(); } })
+    .on('head > link[rel="canonical"]', { element: (el) => { el.remove(); } })
+    .on('head > script[type="application/ld+json"]', { element: (el) => { el.remove(); } })
     .on('head', {
       element(el) {
         el.append(headFrag, { html: true });
