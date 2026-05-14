@@ -30,21 +30,21 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "visashop_db",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_name": "visashop",
+      "database_id": "cddc6c35-8549-4ff5-88bd-20194b19cceb",
       "migrations_dir": "drizzle/migrations"
     }
   ],
   "r2_buckets": [
     {
       "binding": "BUCKET",
-      "bucket_name": "visashop-files"
+      "bucket_name": "main"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "00000000000000000000000000000000"
+      "id": "344c878cf334400798af5ad0d1ebb757"
     }
   ],
   "workflows": [
