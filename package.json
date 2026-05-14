@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "npm run build && vite preview",
-    "deploy": "npm run cf-typegen && npm run build && wrangler deploy",
+    "deploy": "node ps.js && npm run cf-typegen && npm run build && wrangler deploy",
     "cf-typegen": "wrangler types",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply visashop_db --local",
