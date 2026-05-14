@@ -19,9 +19,9 @@
     "APIRONE_BASE_URL": "https://apirone.com/api",
     "APIRONE_TICKER_DEFAULT": "btc",
     "APIRONE_REQUIRED_CONFIRMATIONS": "1",
-    "R2_PUBLIC_BASE": "https://pub-1e05cd6ad45c445c80980eb960eedd07.r2.dev",
-    "R2_ACCOUNT_ID": "553d69faa02f10d1d64ee4d0c0309e50",
-    "R2_BUCKET_NAME": "visashop-files",
+    "R2_PUBLIC_BASE": "https://pub-a6c99ca7484548f5a2557f3a3ba38f3e.r2.dev",
+    "R2_ACCOUNT_ID": "7416e7b5d307baabca87e8fba69158e5",
+    "R2_BUCKET_NAME": "files",
     "MAIL_FROM": "VisaShop <noreply@example.com>",
     "MAIL_REPLY_TO": "support@example.com",
     "ORDER_PAYMENT_TIMEOUT": "1 hour"
@@ -31,20 +31,20 @@
     {
       "binding": "DB",
       "database_name": "visashop",
-      "database_id": "cddc6c35-8549-4ff5-88bd-20194b19cceb",
+      "database_id": "4df3fee2-180c-4841-99ab-ad1a2be6c5a5",
       "migrations_dir": "drizzle/migrations"
     }
   ],
   "r2_buckets": [
     {
       "binding": "BUCKET",
-      "bucket_name": "main"
+      "bucket_name": "files"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "344c878cf334400798af5ad0d1ebb757"
+      "id": "4364507baf164d75999e9c8fa4363488"
     }
   ],
   "workflows": [
