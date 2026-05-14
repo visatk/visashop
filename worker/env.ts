@@ -11,6 +11,10 @@ export interface AppEnv extends Env {
   KV: KVNamespace;
   BUCKET: R2Bucket;
   ASSETS: Fetcher;
+  /** Workflow handling the full order lifecycle (payment → fulfilment). */
+  ORDER_WORKFLOW: Workflow<OrderWorkflowParams>;
+  /** Workflow that backs up the D1 database to R2 on a daily cron. */
+  BACKUP_WORKFLOW: Workflow<Record<string, never>>;
 
   /* Vars (wrangler.jsonc -> vars) */
   APP_NAME: string;
@@ -25,6 +29,8 @@ export interface AppEnv extends Env {
   R2_BUCKET_NAME: string;
   MAIL_FROM: string;
   MAIL_REPLY_TO: string;
+  /** Workflow timeout for the payment wait window, e.g. "1 hour". */
+  ORDER_PAYMENT_TIMEOUT: string;
 
   /* Secrets (wrangler secret put …) */
   SESSION_SECRET?: string;
@@ -36,6 +42,16 @@ export interface AppEnv extends Env {
   R2_SECRET_ACCESS_KEY?: string;
   ADMIN_BOOTSTRAP_EMAIL?: string;
   ADMIN_BOOTSTRAP_PASSWORD?: string;
+}
+
+export interface OrderWorkflowParams {
+  orderId: string;
+}
+
+export interface PaymentConfirmedEvent {
+  txHash: string | null;
+  confirmations: number;
+  receivedMinor: string;
 }
 
 export interface RequestContext {

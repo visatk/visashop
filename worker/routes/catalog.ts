@@ -1,8 +1,11 @@
 import { and, asc, desc, eq, like, sql, inArray } from 'drizzle-orm';
-import { Router, badRequest, notFound, ok } from '../lib/http';
+import { Router, badRequest, notFound, ok, readJson } from '../lib/http';
 import { getDb, schema } from '../db/client';
+import { randomId } from '../lib/crypto';
+import { rateLimit } from '../lib/rate-limit';
 
 const PRODUCT_CACHE_TTL = 60; // seconds
+const PRODUCT_TYPES = new Set(['key', 'file', 'subscription', 'script']);
 
 async function getCatalogVersion(env: import('../env').AppEnv): Promise<string> {
   const v = await env.KV.get('catalog:version');
@@ -62,6 +65,19 @@ function rowToCard(p: typeof schema.products.$inferSelect, cat: typeof schema.ca
   };
 }
 
+/**
+ *  In-stock semantics:
+ *    - 'key' / 'subscription'  → at least one license_key with status='available'
+ *    - 'file' / 'script'       → manualStock is null (unlimited), 0 (unlimited),
+ *                                 or > 0. Negative values mean out of stock.
+ */
+function computeInStock(p: typeof schema.products.$inferSelect, availableKeys: number): boolean {
+  if (p.type === 'key' || p.type === 'subscription') return availableKeys > 0;
+  if (p.manualStock === null || p.manualStock === undefined) return true;
+  if (p.manualStock <= 0) return p.manualStock === 0; // 0 means unlimited, < 0 means out
+  return true;
+}
+
 export const catalogRoutes = new Router()
   /* ------------------------------ Categories ----------------------------- */
   .get('/api/categories', async (ctx) => {
@@ -89,7 +105,9 @@ export const catalogRoutes = new Router()
     const db = getDb(ctx.env);
     const conds = [eq(schema.products.isActive, true)];
     if (q) conds.push(like(schema.products.name, `%${q}%`));
-    if (type) conds.push(eq(schema.products.type, type as any));
+    if (type && PRODUCT_TYPES.has(type)) {
+      conds.push(eq(schema.products.type, type as 'key' | 'file' | 'subscription' | 'script'));
+    }
     if (featuredOnly) conds.push(eq(schema.products.isFeatured, true));
 
     let categoryId: string | null = null;
@@ -124,13 +142,7 @@ export const catalogRoutes = new Router()
       .all();
 
     const stockMap = await getStockMap(db, items.map((i) => i.p.id));
-    const cards = items.map(({ p, c }) => {
-      const inStock =
-        p.type === 'file'
-          ? p.manualStock === null || p.manualStock === 0 || (p.manualStock ?? 0) > 0
-          : (stockMap.get(p.id) ?? 0) > 0;
-      return rowToCard(p, c, inStock);
-    });
+    const cards = items.map(({ p, c }) => rowToCard(p, c, computeInStock(p, stockMap.get(p.id) ?? 0)));
 
     const result = { items: cards, total: Number(totalRow[0]?.n ?? 0), limit, offset };
     if (!q) ctx.ctx.waitUntil(ctx.env.KV.put(cacheKey, JSON.stringify(result), { expirationTtl: PRODUCT_CACHE_TTL }));
@@ -176,8 +188,7 @@ export const catalogRoutes = new Router()
       .all();
 
     const stock = Number(stockRow[0]?.n ?? 0);
-    const inStock =
-      p.type === 'file' ? (p.manualStock === null || (p.manualStock ?? 0) >= 0) : stock > 0;
+    const inStock = computeInStock(p, stock);
     const result = {
       ...rowToCard(p, c, inStock),
       description: p.description,
@@ -195,13 +206,15 @@ export const catalogRoutes = new Router()
   })
   /* ------------------------- Submit a review ----------------------------- */
   .post('/api/products/:slug/reviews', async (ctx, params) => {
-    const body = await ctx.request.json<{ rating: number; title?: string; body?: string; authorName?: string }>().catch(() => null);
+    const rl = await rateLimit(ctx.env, `review:${ctx.ip}`, 5, 60 * 10);
+    if (!rl.allowed) return badRequest('Too many reviews submitted. Try again later.', 429);
+    const body = await readJson<{ rating: number; title?: string; body?: string; authorName?: string }>(ctx.request);
     if (!body || typeof body.rating !== 'number') return badRequest('Rating required');
     const rating = Math.max(1, Math.min(5, Math.round(body.rating)));
     const db = getDb(ctx.env);
     const rows = await db.select({ id: schema.products.id }).from(schema.products).where(eq(schema.products.slug, params.slug)).all();
     if (!rows[0]) return notFound('Product not found');
-    const id = `rv_${Math.random().toString(36).slice(2, 14)}`;
+    const id = `rv_${randomId(8)}`;
     await db.insert(schema.reviews).values({
       id,
       productId: rows[0].id,

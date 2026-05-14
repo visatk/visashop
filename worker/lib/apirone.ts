@@ -15,20 +15,6 @@ export interface ApironeAddress {
   callback?: unknown;
 }
 
-export interface CallbackPayload {
-  /* v2 wallet/address callback */
-  value?: number | string;
-  input_address?: string;
-  confirmations?: number;
-  input_transaction_hash?: string;
-  data?: Record<string, unknown>;
-  account?: string;
-  currency?: string;
-  transaction_hash?: string;
-  payment?: string;
-  destinations?: { address: string; amount: number | string }[];
-}
-
 const RETRYABLE_STATUS = [408, 425, 429, 500, 502, 503, 504];
 
 async function fetchWithRetry(url: string, init: RequestInit, attempts = 3): Promise<Response> {
@@ -130,15 +116,12 @@ export async function tickerRate(
     v = (data[crypto] as Record<string, number>)[fiat];
   }
   if (!v || !Number.isFinite(v) || v <= 0) throw new Error('ticker missing value');
-  await env.KV.put(cacheKey, String(v), { expirationTtl: cacheSeconds });
+  // KV requires expirationTtl >= 60 seconds.
+  await env.KV.put(cacheKey, String(v), { expirationTtl: Math.max(60, cacheSeconds) });
   return v;
 }
 
 /* ---------------------------- BigInt helpers ------------------------------ */
-
-export function bigStrAdd(a: string | null | undefined, b: string | null | undefined): string {
-  return ((BigInt(a ?? '0') || 0n) + (BigInt(b ?? '0') || 0n)).toString();
-}
 
 export function bigStrMax(a: string | null | undefined, b: string | null | undefined): string {
   const ax = BigInt(a ?? '0');

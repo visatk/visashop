@@ -1,25 +1,75 @@
 /**
- *  R2 helpers — uses the Cloudflare R2 binding for everything except
- *  presigned download URLs, which are issued via the AWS S3 SDK
- *  (R2 is S3-compatible). Presigning needs an account-level Access
- *  Key ID / Secret Access Key created in the R2 dashboard.
+ *  R2 helpers.
+ *
+ *  We use the Cloudflare R2 binding (`env.BUCKET`) for direct reads,
+ *  writes, and deletes inside the worker. Presigned URLs are produced
+ *  with `aws4fetch` — Cloudflare's recommended Workers-native SigV4
+ *  client. It is one tiny file (~3 KB) and avoids pulling the full
+ *  AWS SDK into the Worker bundle.
+ *
+ *  Presigning needs an account-level Access Key ID / Secret Access
+ *  Key created via R2 → "Manage R2 API tokens".
+ *
+ *  Refer to:
+ *    https://developers.cloudflare.com/r2/api/s3/presigned-urls/
+ *    https://developers.cloudflare.com/r2/objects/upload-objects/
  */
-import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { AwsClient } from 'aws4fetch';
 import type { AppEnv } from '../env';
 
-function s3Client(env: AppEnv): S3Client {
-  if (!env.R2_ACCOUNT_ID || !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY) {
-    throw new Error('R2 presign credentials missing (R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY)');
+function r2Endpoint(env: AppEnv): string {
+  if (!env.R2_ACCOUNT_ID) {
+    throw new Error('R2_ACCOUNT_ID var is not configured');
   }
-  return new S3Client({
+  return `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+}
+
+function awsClient(env: AppEnv): AwsClient {
+  if (!env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY) {
+    throw new Error('R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY secrets missing');
+  }
+  return new AwsClient({
+    accessKeyId: env.R2_ACCESS_KEY_ID,
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+    service: 's3',
     region: 'auto',
-    endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: env.R2_ACCESS_KEY_ID,
-      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
-    },
   });
+}
+
+/**
+ *  RFC 6266-compliant `attachment; filename*=UTF-8''<percent-encoded>` so
+ *  non-ASCII filenames render correctly in browsers without breaking
+ *  older clients.
+ */
+function contentDispositionFor(filename: string): string {
+  const safe = filename.replace(/[\\/]/g, '_').replace(/"/g, '');
+  const ascii = safe.replace(/[^\x20-\x7E]/g, '_');
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(safe)}`;
+}
+
+/**
+ *  Build a presigned URL by composing an unsigned URL, then asking
+ *  `aws4fetch` to sign the query parameters in place.
+ */
+async function presign(
+  env: AppEnv,
+  method: 'GET' | 'PUT' | 'HEAD' | 'DELETE',
+  r2Key: string,
+  expiresInSeconds: number,
+  extraQuery: Record<string, string> = {},
+  signedHeaders: Record<string, string> = {},
+): Promise<string> {
+  const url = new URL(`${r2Endpoint(env)}/${env.R2_BUCKET_NAME}/${r2Key.replace(/^\//, '')}`);
+  // X-Amz-Expires must be 1..604800.
+  const ttl = Math.max(1, Math.min(604_800, Math.floor(expiresInSeconds)));
+  url.searchParams.set('X-Amz-Expires', String(ttl));
+  for (const [k, v] of Object.entries(extraQuery)) url.searchParams.set(k, v);
+
+  const signed = await awsClient(env).sign(
+    new Request(url.toString(), { method, headers: signedHeaders }),
+    { aws: { signQuery: true } },
+  );
+  return signed.url;
 }
 
 export async function presignDownloadUrl(
@@ -28,14 +78,9 @@ export async function presignDownloadUrl(
   expiresInSeconds = 3600,
   filename?: string,
 ): Promise<string> {
-  const cmd = new GetObjectCommand({
-    Bucket: env.R2_BUCKET_NAME,
-    Key: r2Key,
-    ResponseContentDisposition: filename
-      ? `attachment; filename="${encodeURIComponent(filename)}"`
-      : undefined,
-  });
-  return await getSignedUrl(s3Client(env), cmd, { expiresIn: expiresInSeconds });
+  const extra: Record<string, string> = {};
+  if (filename) extra['response-content-disposition'] = contentDispositionFor(filename);
+  return presign(env, 'GET', r2Key, expiresInSeconds, extra);
 }
 
 export async function presignUploadUrl(
@@ -44,22 +89,19 @@ export async function presignUploadUrl(
   contentType?: string,
   expiresInSeconds = 600,
 ): Promise<string> {
-  const cmd = new PutObjectCommand({
-    Bucket: env.R2_BUCKET_NAME,
-    Key: r2Key,
-    ContentType: contentType,
-  });
-  return await getSignedUrl(s3Client(env), cmd, { expiresIn: expiresInSeconds });
+  const headers: Record<string, string> = {};
+  if (contentType) headers['content-type'] = contentType;
+  return presign(env, 'PUT', r2Key, expiresInSeconds, {}, headers);
 }
 
 export async function deleteObject(env: AppEnv, r2Key: string): Promise<void> {
-  await s3Client(env).send(new DeleteObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: r2Key }));
+  // The bound R2Bucket already has full delete permission — no need to
+  // make an external SigV4 request.
+  await env.BUCKET.delete(r2Key);
 }
 
 /**
- *  Multipart upload helpers for large files (>= ~95 MB recommended).
- *  We expose the createMultipartUpload + presigned UploadPart URLs
- *  so the admin can upload directly from the browser.
+ *  Multipart upload helpers for large files (> ~95 MB recommended).
  *  See https://developers.cloudflare.com/r2/api/workers/workers-multipart-usage/
  */
 export async function createMultipart(

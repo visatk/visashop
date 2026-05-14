@@ -35,6 +35,7 @@ export const authRoutes = new Router()
     const session = await createSession(ctx.env, id, {
       userAgent: ctx.request.headers.get('user-agent') ?? undefined,
       ip: ctx.ip,
+      secure: ctx.url.protocol === 'https:',
     });
     const headers = new Headers();
     headers.append('Set-Cookie', session.cookie);
@@ -75,6 +76,7 @@ export const authRoutes = new Router()
     const session = await createSession(ctx.env, user.id, {
       userAgent: ctx.request.headers.get('user-agent') ?? undefined,
       ip: ctx.ip,
+      secure: ctx.url.protocol === 'https:',
     });
     const headers = new Headers();
     headers.append('Set-Cookie', session.cookie);
@@ -93,7 +95,7 @@ export const authRoutes = new Router()
       const dot = raw.indexOf('.');
       if (dot > 0) sid = raw.slice(0, dot);
     }
-    const cookie = await destroySession(ctx.env, sid);
+    const cookie = await destroySession(ctx.env, sid, ctx.url.protocol === 'https:');
     const headers = new Headers();
     headers.append('Set-Cookie', cookie);
     return jsonResponse({ ok: true, data: { loggedOut: true } }, { headers });

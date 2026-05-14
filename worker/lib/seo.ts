@@ -81,6 +81,8 @@ export function renderHeadTags(meta: SeoMeta, env: AppEnv): string {
  */
 export function injectSeo(response: Response, meta: SeoMeta, env: AppEnv): Response {
   if (!response.headers.get('Content-Type')?.includes('text/html')) return response;
+  // 304 Not Modified and similar bodyless responses must be returned as-is.
+  if (!response.body) return response;
   const headFrag = renderHeadTags(meta, env);
   const rewriter = new HTMLRewriter()
     .on('head > title', { element: (el) => el.remove() })

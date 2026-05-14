@@ -18,7 +18,6 @@ import {
 import { randomId, slugify, hashPassword } from '../lib/crypto';
 import { getDb, schema } from '../db/client';
 import type { RequestContext } from '../env';
-import { fulfilOrder } from '../lib/fulfillment';
 import { presignUploadUrl, deleteObject } from '../lib/r2';
 
 function requireAdmin(ctx: RequestContext): Response | null {
@@ -93,13 +92,25 @@ export const adminRoutes = new Router()
   .post('/api/admin/products', async (ctx) => {
     const guard = requireAdmin(ctx);
     if (guard) return guard;
-    const body = await readJson<Partial<typeof schema.products.$inferInsert> & { name: string; priceCents: number }>(ctx.request);
-    if (!body?.name || typeof body.priceCents !== 'number' || body.priceCents < 0) return badRequest('name and non-negative priceCents required');
+    const body = await readJson<
+      Partial<typeof schema.products.$inferInsert> & {
+        name: string;
+        priceCents: number;
+        gallery?: string | unknown[];
+      }
+    >(ctx.request);
+    if (!body?.name || typeof body.priceCents !== 'number' || body.priceCents < 0) {
+      return badRequest('name and non-negative priceCents required');
+    }
     const db = getDb(ctx.env);
     const id = `prd_${randomId(10)}`;
     const slug = body.slug?.trim() ? slugify(body.slug) : slugify(body.name) + '-' + randomId(2);
     /* Conflict check on slug to avoid the unique-index error spilling out raw. */
-    const existingSlug = await db.select({ id: schema.products.id }).from(schema.products).where(eq(schema.products.slug, slug)).all();
+    const existingSlug = await db
+      .select({ id: schema.products.id })
+      .from(schema.products)
+      .where(eq(schema.products.slug, slug))
+      .all();
     if (existingSlug[0]) return badRequest('Slug already in use — pick a different name or slug.');
     /* Make sure gallery is JSON-serialisable. */
     let gallery: string | null = null;
@@ -127,20 +138,23 @@ export const adminRoutes = new Router()
       isActive: body.isActive ?? true,
       isFeatured: body.isFeatured ?? false,
     });
-    invalidateCatalog(ctx.env);
+    await invalidateCatalog(ctx.env);
     return ok({ id, slug });
   })
   .patch('/api/admin/products/:id', async (ctx, params) => {
     const guard = requireAdmin(ctx);
     if (guard) return guard;
-    const body = await readJson<Partial<typeof schema.products.$inferInsert>>(ctx.request);
+    const body = await readJson<Partial<typeof schema.products.$inferInsert> & { gallery?: string | unknown[] }>(ctx.request);
     if (!body) return badRequest('Body required');
     const db = getDb(ctx.env);
-    const updates: Partial<typeof schema.products.$inferInsert> = { ...body, updatedAt: new Date() };
-    if (body.slug) updates.slug = slugify(body.slug);
-    if (Array.isArray(body.gallery)) updates.gallery = JSON.stringify(body.gallery);
+    const { id: _ignoredId, gallery: rawGallery, ...rest } = body;
+    void _ignoredId;
+    const updates: Partial<typeof schema.products.$inferInsert> = { ...rest, updatedAt: new Date() };
+    if (rest.slug) updates.slug = slugify(rest.slug);
+    if (Array.isArray(rawGallery)) updates.gallery = JSON.stringify(rawGallery);
+    else if (typeof rawGallery === 'string') updates.gallery = rawGallery;
     await db.update(schema.products).set(updates).where(eq(schema.products.id, params.id));
-    invalidateCatalog(ctx.env);
+    await invalidateCatalog(ctx.env);
     return ok({ updated: true });
   })
   .delete('/api/admin/products/:id', async (ctx, params) => {
@@ -148,7 +162,7 @@ export const adminRoutes = new Router()
     if (guard) return guard;
     const db = getDb(ctx.env);
     await db.delete(schema.products).where(eq(schema.products.id, params.id));
-    invalidateCatalog(ctx.env);
+    await invalidateCatalog(ctx.env);
     return ok({ deleted: true });
   })
 
@@ -198,7 +212,18 @@ export const adminRoutes = new Router()
     if (guard) return guard;
     const body = await readJson<{ filename: string; contentType?: string; sizeBytes?: number }>(ctx.request);
     if (!body?.filename) return badRequest('filename required');
-    const r2Key = `products/${params.id}/${Date.now()}-${slugify(body.filename)}`;
+    // Verify product exists so we don't spawn orphaned R2 objects.
+    const db = getDb(ctx.env);
+    const exists = await db
+      .select({ id: schema.products.id })
+      .from(schema.products)
+      .where(eq(schema.products.id, params.id))
+      .limit(1)
+      .all();
+    if (!exists[0]) return notFound('Product not found');
+    // Cap presigned upload TTL and content-type to safe values.
+    const safeName = slugify(body.filename) || 'file';
+    const r2Key = `products/${params.id}/${Date.now()}-${safeName}`;
     const url = await presignUploadUrl(ctx.env, r2Key, body.contentType, 600);
     return ok({ uploadUrl: url, r2Key });
   })
@@ -207,6 +232,12 @@ export const adminRoutes = new Router()
     if (guard) return guard;
     const body = await readJson<{ label: string; r2Key: string; sizeBytes?: number; mimeType?: string }>(ctx.request);
     if (!body?.label || !body?.r2Key) return badRequest('label and r2Key required');
+    // The r2Key must live under this product's folder. Prevents an
+    // admin (compromised or otherwise) from registering a key that
+    // points at someone else's path.
+    if (!body.r2Key.startsWith(`products/${params.id}/`)) {
+      return badRequest('r2Key must reference this product folder');
+    }
     const db = getDb(ctx.env);
     const id = `pf_${randomId(8)}`;
     await db.insert(schema.productFiles).values({
@@ -255,7 +286,7 @@ export const adminRoutes = new Router()
       image: body.image ?? null,
       sortOrder: body.sortOrder ?? 0,
     });
-    invalidateCatalog(ctx.env);
+    await invalidateCatalog(ctx.env);
     return ok({ id, slug });
   })
   .patch('/api/admin/categories/:id', async (ctx, params) => {
@@ -263,10 +294,15 @@ export const adminRoutes = new Router()
     if (guard) return guard;
     const body = await readJson<Partial<typeof schema.categories.$inferInsert>>(ctx.request);
     if (!body) return badRequest('Body required');
-    if (body.name && !body.slug) body.slug = slugify(body.name);
+    // Strip id from the update set — patching the primary key would corrupt FKs.
+    const { id: _ignoredId, ...rest } = body;
+    void _ignoredId;
+    const updates: Partial<typeof schema.categories.$inferInsert> = { ...rest };
+    if (rest.name && !rest.slug) updates.slug = slugify(rest.name);
+    if (rest.slug) updates.slug = slugify(rest.slug);
     const db = getDb(ctx.env);
-    await db.update(schema.categories).set(body).where(eq(schema.categories.id, params.id));
-    invalidateCatalog(ctx.env);
+    await db.update(schema.categories).set(updates).where(eq(schema.categories.id, params.id));
+    await invalidateCatalog(ctx.env);
     return ok({ updated: true });
   })
   .delete('/api/admin/categories/:id', async (ctx, params) => {
@@ -274,7 +310,7 @@ export const adminRoutes = new Router()
     if (guard) return guard;
     const db = getDb(ctx.env);
     await db.delete(schema.categories).where(eq(schema.categories.id, params.id));
-    invalidateCatalog(ctx.env);
+    await invalidateCatalog(ctx.env);
     return ok({ deleted: true });
   })
 
@@ -332,12 +368,14 @@ export const adminRoutes = new Router()
     if (guard) return guard;
     const status = ctx.url.searchParams.get('status') ?? '';
     const db = getDb(ctx.env);
-    const VALID_STATUSES = new Set([
+    const VALID_STATUSES = [
       'pending', 'awaiting_payment', 'partial', 'paid', 'fulfilled', 'expired', 'cancelled', 'refunded',
-    ]);
+    ] as const;
+    type OrderStatus = typeof VALID_STATUSES[number];
+    const isValid = (s: string): s is OrderStatus => (VALID_STATUSES as readonly string[]).includes(s);
     const baseSelect = db.select().from(schema.orders);
-    const rows = status && VALID_STATUSES.has(status)
-      ? await baseSelect.where(eq(schema.orders.status, status as 'pending')).orderBy(desc(schema.orders.createdAt)).limit(200).all()
+    const rows = isValid(status)
+      ? await baseSelect.where(eq(schema.orders.status, status)).orderBy(desc(schema.orders.createdAt)).limit(200).all()
       : await baseSelect.orderBy(desc(schema.orders.createdAt)).limit(200).all();
     return ok(rows);
   })
@@ -353,21 +391,129 @@ export const adminRoutes = new Router()
   .post('/api/admin/orders/:id/fulfil', async (ctx, params) => {
     const guard = requireAdmin(ctx);
     if (guard) return guard;
-    const r = await fulfilOrder(ctx.env, params.id);
-    return ok(r);
+    /**
+     *  Re-drive the order workflow. Two cases:
+     *    1. The workflow is still alive but stuck waiting for a
+     *       payment event — send a synthetic "payment-confirmed" so
+     *       it advances to fulfilment.
+     *    2. The workflow has terminated/expired — restart it from the
+     *       `mark-paid` step so it picks up where it left off.
+     */
+    const db = getDb(ctx.env);
+    const rows = await db
+      .select({
+        cryptoAmount: schema.orders.cryptoAmount,
+        cryptoReceived: schema.orders.cryptoReceived,
+        paymentConfirmations: schema.orders.paymentConfirmations,
+        paymentTxHash: schema.orders.paymentTxHash,
+      })
+      .from(schema.orders)
+      .where(eq(schema.orders.id, params.id))
+      .limit(1)
+      .all();
+    if (!rows[0]) return badRequest('Order not found', 404);
+
+    try {
+      const instance = await ctx.env.ORDER_WORKFLOW.get(params.id);
+      const status = await instance.status();
+      if (status.status === 'waiting' || status.status === 'running' || status.status === 'paused') {
+        if (status.status === 'paused') await instance.resume();
+        await instance.sendEvent({
+          type: 'payment-confirmed',
+          payload: {
+            txHash: rows[0].paymentTxHash,
+            confirmations: Math.max(rows[0].paymentConfirmations, 1),
+            receivedMinor: rows[0].cryptoReceived ?? rows[0].cryptoAmount ?? '0',
+          },
+        });
+        return ok({ action: 'event-sent' });
+      }
+      if (status.status === 'errored' || status.status === 'terminated' || status.status === 'complete') {
+        await instance.restart({ from: { name: 'mark-paid' } });
+        return ok({ action: 'restarted' });
+      }
+      return ok({ action: 'no-op', status: status.status });
+    } catch {
+      // No instance — recreate one.
+      const created = await ctx.env.ORDER_WORKFLOW.create({
+        id: params.id,
+        params: { orderId: params.id },
+      });
+      return ok({ action: 'created', instanceId: created.id });
+    }
+  })
+  .post('/api/admin/orders/:id/restart-workflow', async (ctx, params) => {
+    const guard = requireAdmin(ctx);
+    if (guard) return guard;
+    try {
+      const instance = await ctx.env.ORDER_WORKFLOW.get(params.id);
+      await instance.restart();
+      return ok({ restarted: true });
+    } catch (err) {
+      return badRequest(`Could not restart workflow: ${(err as Error).message}`, 502);
+    }
+  })
+  .get('/api/admin/orders/:id/workflow', async (ctx, params) => {
+    const guard = requireAdmin(ctx);
+    if (guard) return guard;
+    try {
+      const instance = await ctx.env.ORDER_WORKFLOW.get(params.id);
+      const status = await instance.status();
+      return ok({ id: instance.id, ...status });
+    } catch (err) {
+      return ok({ id: params.id, status: 'unknown', error: (err as Error).message });
+    }
+  })
+  .post('/api/admin/backups', async (ctx) => {
+    const guard = requireAdmin(ctx);
+    if (guard) return guard;
+    const id = `manual-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomId(4)}`;
+    try {
+      const instance = await ctx.env.BACKUP_WORKFLOW.create({ id, params: {} });
+      return ok({ id: instance.id, status: await instance.status() });
+    } catch (err) {
+      return badRequest(`Could not start backup: ${(err as Error).message}`, 502);
+    }
+  })
+  .get('/api/admin/backups/:id', async (ctx, params) => {
+    const guard = requireAdmin(ctx);
+    if (guard) return guard;
+    try {
+      const instance = await ctx.env.BACKUP_WORKFLOW.get(params.id);
+      return ok({ id: instance.id, ...(await instance.status()) });
+    } catch (err) {
+      return badRequest(`Backup not found: ${(err as Error).message}`, 404);
+    }
   })
   .post('/api/admin/orders/:id/cancel', async (ctx, params) => {
     const guard = requireAdmin(ctx);
     if (guard) return guard;
     const db = getDb(ctx.env);
-    await db.update(schema.orders).set({ status: 'cancelled', updatedAt: new Date() }).where(eq(schema.orders.id, params.id));
+    await db
+      .update(schema.orders)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(eq(schema.orders.id, params.id));
+    // Best-effort: terminate the running workflow so it doesn't keep
+    // sleeping waiting for a payment that won't come.
+    try {
+      const instance = await ctx.env.ORDER_WORKFLOW.get(params.id);
+      const status = await instance.status();
+      if (status.status === 'running' || status.status === 'waiting' || status.status === 'paused') {
+        await instance.terminate();
+      }
+    } catch {
+      /* no instance — fine */
+    }
     return ok({ cancelled: true });
   })
   .post('/api/admin/orders/:id/refund', async (ctx, params) => {
     const guard = requireAdmin(ctx);
     if (guard) return guard;
     const db = getDb(ctx.env);
-    await db.update(schema.orders).set({ status: 'refunded', updatedAt: new Date() }).where(eq(schema.orders.id, params.id));
+    await db
+      .update(schema.orders)
+      .set({ status: 'refunded', updatedAt: new Date() })
+      .where(eq(schema.orders.id, params.id));
     return ok({ refunded: true });
   })
 
@@ -418,6 +564,10 @@ export const adminRoutes = new Router()
     if (guard) return guard;
     const body = await readJson<{ role?: 'user' | 'admin'; password?: string; name?: string }>(ctx.request);
     if (!body) return badRequest('Body required');
+    // Don't let an admin demote themselves into a footgun.
+    if (ctx.user?.id === params.id && body.role === 'user') {
+      return badRequest('You cannot demote your own admin account.');
+    }
     const db = getDb(ctx.env);
     const updates: Partial<typeof schema.users.$inferInsert> = { updatedAt: new Date() };
     if (body.role) updates.role = body.role;

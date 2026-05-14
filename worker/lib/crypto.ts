@@ -36,7 +36,7 @@ export function bufToHex(buf: ArrayBuffer): string {
 
 export function hexToBuf(hex: string): Uint8Array {
   const arr = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.substr(i * 2, 2), 16);
+  for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return arr;
 }
 

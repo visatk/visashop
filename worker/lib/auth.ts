@@ -25,7 +25,7 @@ function requireSecret(env: AppEnv): string {
 export async function createSession(
   env: AppEnv,
   userId: string,
-  meta: { userAgent?: string; ip?: string },
+  meta: { userAgent?: string; ip?: string; secure?: boolean },
 ): Promise<{ id: string; cookie: string; expiresAt: Date }> {
   const id = randomId(24);
   const now = Date.now();
@@ -42,7 +42,7 @@ export async function createSession(
   const value = `${id}.${sig}`;
   const cookie = serializeCookie(SESSION_COOKIE, value, {
     httpOnly: true,
-    secure: true,
+    secure: meta.secure ?? true,
     sameSite: 'Lax',
     path: '/',
     maxAge: SESSION_TTL_SECONDS,
@@ -50,12 +50,12 @@ export async function createSession(
   return { id, cookie, expiresAt };
 }
 
-export async function destroySession(env: AppEnv, sessionId: string): Promise<string> {
+export async function destroySession(env: AppEnv, sessionId: string, secure = true): Promise<string> {
   const db = getDb(env);
   await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
   return serializeCookie(SESSION_COOKIE, '', {
     httpOnly: true,
-    secure: true,
+    secure,
     sameSite: 'Lax',
     path: '/',
     maxAge: 0,

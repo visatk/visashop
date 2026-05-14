@@ -2,13 +2,18 @@
  *  VisaShop — Cloudflare Worker entry point.
  *
  *  Responsibilities:
- *    1. Provide the JSON API under /api/*
- *    2. Serve Apirone webhook callbacks at /api/webhooks/apirone
- *    3. Emit /sitemap.xml and /robots.txt
- *    4. For HTML SPA navigations, intercept the ASSETS response
- *       and inject route-aware SEO meta + JSON-LD.
- *    5. Bootstrap the first admin user from secrets if missing,
- *       and run a tiny housekeeping pass to expire stale orders.
+ *    1. JSON API under /api/*
+ *    2. Apirone webhook callback at /api/webhooks/apirone (forwards
+ *       confirmation events into the order workflow)
+ *    3. /sitemap.xml + /robots.txt
+ *    4. Per-route SEO meta + JSON-LD injection on the SPA shell
+ *    5. Cron handler (calls the D1 backup workflow daily)
+ *    6. One-shot admin bootstrap from secrets
+ *
+ *  Long-running tasks (order fulfilment, mail with retries, expiry,
+ *  daily DB backup) are handled by Cloudflare Workflows; see
+ *  `worker/workflows/*`. We re-export those classes here so wrangler
+ *  finds them by `class_name`.
  */
 import type { AppEnv } from './env';
 import { Router, buildContext, jsonResponse, corsPreflight, SECURITY_HEADERS } from './lib/http';
@@ -23,7 +28,10 @@ import { defaultMeta, injectSeo } from './lib/seo';
 import { getDb, schema } from './db/client';
 import { hashPassword, randomId } from './lib/crypto';
 import { eq } from 'drizzle-orm';
-import { expireStaleOrders } from './lib/fulfillment';
+
+/* Re-export the workflow classes so the runtime wires them up. */
+export { OrderLifecycleWorkflow } from './workflows/order-lifecycle';
+export { D1BackupWorkflow } from './workflows/d1-backup';
 
 let bootstrapped = false;
 
@@ -42,7 +50,10 @@ async function bootstrapAdminOnce(env: AppEnv) {
       .all();
     if (existing[0]) {
       if (existing[0].role !== 'admin') {
-        await db.update(schema.users).set({ role: 'admin' }).where(eq(schema.users.id, existing[0].id));
+        await db
+          .update(schema.users)
+          .set({ role: 'admin' })
+          .where(eq(schema.users.id, existing[0].id));
         console.log('[bootstrap] promoted existing user to admin');
       }
       return;
@@ -58,24 +69,11 @@ async function bootstrapAdminOnce(env: AppEnv) {
       });
       console.log('[bootstrap] admin user created:', email);
     } catch (err) {
-      // Could be a UNIQUE conflict from a parallel cold-start — that's fine.
+      // UNIQUE conflict from a parallel cold-start is fine.
       console.warn('[bootstrap] insert skipped', err);
     }
   } catch (err) {
     console.error('[bootstrap] failed', err);
-  }
-}
-
-async function maybeRunHousekeeping(env: AppEnv): Promise<void> {
-  try {
-    const last = await env.KV.get('housekeeping:last');
-    const now = Math.floor(Date.now() / 1000);
-    if (last && now - Number(last) < 60) return;
-    await env.KV.put('housekeeping:last', String(now), { expirationTtl: 600 });
-    const expired = await expireStaleOrders(env);
-    if (expired > 0) console.log('[housekeeping] expired', expired, 'orders');
-  } catch (err) {
-    console.warn('[housekeeping] failed', err);
   }
 }
 
@@ -86,17 +84,13 @@ for (const r of [authRoutes, catalogRoutes, checkoutRoutes, accountRoutes, admin
 
 export default {
   async fetch(request: Request, env: AppEnv, ctx: ExecutionContext): Promise<Response> {
-    // One-shot admin bootstrap (no-op after the first request).
+    /* One-shot admin bootstrap (no-op after the first request). */
     ctx.waitUntil(bootstrapAdminOnce(env));
 
     const preflight = corsPreflight(request);
     if (preflight) return preflight;
 
     const ctxObj = await buildContext(request, env, ctx);
-
-    // Run periodic housekeeping in the background — cheap and idempotent.
-    // Throttled via KV so it runs at most once per minute regardless of QPS.
-    ctx.waitUntil(maybeRunHousekeeping(env));
 
     /* 1. API + webhooks + SEO endpoints */
     const apiRes = await apiRouter.handle(ctxObj);
@@ -115,7 +109,7 @@ export default {
     /* 4. Static assets / SPA shell with SEO rewrite */
     const assetRes = await env.ASSETS.fetch(request);
     const ct = assetRes.headers.get('Content-Type') ?? '';
-    if (ct.includes('text/html')) {
+    if (ct.includes('text/html') && assetRes.body) {
       const meta = (await resolveSeoForPath(env, ctxObj.url)) ?? defaultMeta(env, ctxObj.url);
       const rewritten = injectSeo(assetRes, meta, env);
       const headers = new Headers(rewritten.headers);
@@ -133,11 +127,30 @@ export default {
           "base-uri 'self'",
           "form-action 'self'",
           "frame-ancestors 'none'",
-          "upgrade-insecure-requests",
+          'upgrade-insecure-requests',
         ].join('; '),
       );
       return new Response(rewritten.body, { status: rewritten.status, headers });
     }
     return assetRes;
+  },
+
+  /**
+   *  Cron handler — triggers a fresh D1 backup workflow once per
+   *  schedule tick. The workflow itself owns retries + per-table
+   *  step idempotency.
+   */
+  async scheduled(controller: ScheduledController, env: AppEnv, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      (async () => {
+        try {
+          const id = `backup-${new Date(controller.scheduledTime).toISOString().slice(0, 10)}-${randomId(4)}`;
+          const instance = await env.BACKUP_WORKFLOW.create({ id, params: {} });
+          console.log('[cron] backup workflow created', instance.id);
+        } catch (err) {
+          console.error('[cron] failed to create backup workflow', err);
+        }
+      })(),
+    );
   },
 } satisfies ExportedHandler<AppEnv>;

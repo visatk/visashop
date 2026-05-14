@@ -5,7 +5,6 @@ import { rateLimit } from '../lib/rate-limit';
 import { getDb, schema } from '../db/client';
 import { applyCouponCents } from '../lib/fulfillment';
 import { generateAddress, tickerRate, fiatCentsToCryptoMinor, CRYPTO_DECIMALS } from '../lib/apirone';
-import { sendEmail, orderCreatedEmail } from '../lib/mail';
 import { presignDownloadUrl } from '../lib/r2';
 
 const ORDER_LIFETIME_SECONDS = 60 * 60; // 60-minute payment window
@@ -246,22 +245,19 @@ export const checkoutRoutes = new Router()
     const orderToken = await signToken(ctx.env.SESSION_SECRET, { kind: 'order', oid: orderId, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 });
     const payUrl = `${ctx.env.APP_URL.replace(/\/$/, '')}/orders/${orderId}?t=${encodeURIComponent(orderToken)}`;
 
-    /* Send the "order created" email */
-    ctx.ctx.waitUntil(
-      sendEmail(ctx.env, {
-        to: email,
-        subject: `Order ${orderNumber} — payment instructions`,
-        html: orderCreatedEmail(ctx.env, {
-          orderNumber,
-          amount: (total / 100).toFixed(2),
-          currency: ctx.env.APP_CURRENCY,
-          cryptoCurrency,
-          cryptoAddress,
-          cryptoAmount: cryptoAmount.amountDisplay,
-          payUrl,
-        }),
-      }).then(() => undefined),
-    );
+    /* Spawn the order lifecycle workflow. It owns the payment-instructions
+       email, the wait-for-payment timeout, the per-item delivery, and
+       the delivery email — all with retries + checkpoints. */
+    try {
+      await ctx.env.ORDER_WORKFLOW.create({
+        id: orderId,
+        params: { orderId },
+      });
+    } catch (err) {
+      // Don't fail checkout if the workflow couldn't start — the order
+      // is persisted and admin can retry. Log loudly.
+      console.error('order workflow create failed', err);
+    }
 
     return ok({
       orderId,
