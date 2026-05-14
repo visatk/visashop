@@ -1,0 +1,38 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "visashop",
+	"main": "worker/index.ts",
+	"compatibility_date": "2026-05-14",
+	"assets": {
+		"not_found_handling": "single-page-application"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"placement": {
+    "mode": "smart",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "prod-d1-tutorial",
+      "database_id": "<unique-ID-for-your-database>"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "my-bucket"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "<BINDING_ID>"
+    }
+  ]
+}
