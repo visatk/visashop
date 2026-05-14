@@ -1,25 +1,47 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
-interface Toast { id: number; message: string; tone: 'info' | 'success' | 'error' }
+interface Toast {
+  id: number;
+  message: string;
+  tone: 'info' | 'success' | 'error';
+}
 
 interface ToastShape {
   push: (message: string, tone?: Toast['tone']) => void;
 }
-const ToastContext = createContext<ToastShape | null>(null);
 
-let nextId = 1;
+const ToastContext = createContext<ToastShape | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const idRef = useRef(0);
+
   const push = useCallback((message: string, tone: Toast['tone'] = 'info') => {
-    const id = nextId++;
+    const id = ++idRef.current;
     setToasts((t) => [...t, { id, message, tone }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
   }, []);
+
+  // Memoise the context value so consumers' useEffect deps stay stable.
+  const value = useMemo<ToastShape>(() => ({ push }), [push]);
+
   return (
-    <ToastContext.Provider value={{ push }}>
+    <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+      <div
+        className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm"
+        role="region"
+        aria-live="polite"
+        aria-label="Notifications"
+      >
         {toasts.map((t) => (
           <div
             key={t.id}

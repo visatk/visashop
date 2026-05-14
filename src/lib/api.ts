@@ -13,11 +13,11 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     body = (await res.json()) as ApiResult<T>;
   } catch {
-    /* non-json */
+    /* response was not JSON — fall through to the generic network error */
   }
   if (!body) throw new Error(`Network error (${res.status})`);
-  if (!body.ok) throw new Error(body.error);
-  return body.data;
+  if (body.ok === true) return body.data;
+  throw new Error(body.error);
 }
 
 export const api = {

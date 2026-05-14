@@ -76,6 +76,13 @@ interface AdminOrderItem {
   deliveredKey: string | null;
 }
 
+interface WorkflowStatusInfo {
+  id: string;
+  status: string;
+  output?: unknown;
+  error?: { name: string; message: string };
+}
+
 interface AdminOrderDetailRow {
   id: string;
   orderNumber: string;
@@ -94,9 +101,21 @@ interface AdminOrderDetailRow {
 export function AdminOrderDetail() {
   const { id = '' } = useParams();
   const [order, setOrder] = useState<AdminOrderDetailRow | null>(null);
+  const [workflow, setWorkflow] = useState<WorkflowStatusInfo | null>(null);
   const toast = useToast();
-  const load = async () => setOrder(await api.get<AdminOrderDetailRow>(`/api/admin/orders/${id}`));
-  useEffect(() => { void load(); }, [id]);
+
+  const load = async () => {
+    const [o, w] = await Promise.all([
+      api.get<AdminOrderDetailRow>(`/api/admin/orders/${id}`),
+      api.get<WorkflowStatusInfo>(`/api/admin/orders/${id}/workflow`).catch(() => null),
+    ]);
+    setOrder(o);
+    setWorkflow(w);
+  };
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   if (!order) return <div className="grid place-items-center py-32"><div className="spinner" /></div>;
 
@@ -125,11 +144,30 @@ export function AdminOrderDetail() {
         <Info label="Address" value={order.cryptoAddress} />
         <Info label="Confirmations" value={String(order.paymentConfirmations ?? 0)} />
         <Info label="Tx hash" value={order.paymentTxHash} />
+        <Info label="Workflow status" value={workflow?.status ?? '—'} />
       </div>
+      {workflow?.error && (
+        <div className="card p-3 border-2 border-(--color-danger) text-sm">
+          <strong className="text-(--color-danger)">Workflow error:</strong>{' '}
+          {workflow.error.name}: {workflow.error.message}
+        </div>
+      )}
       <div className="flex gap-2 flex-wrap">
-        <button className="btn-primary" onClick={() => action(`/api/admin/orders/${id}/fulfil`, 'Fulfilment attempted')}>Fulfil now</button>
-        <button className="btn-secondary" onClick={() => action(`/api/admin/orders/${id}/cancel`, 'Order cancelled')}>Cancel</button>
-        <button className="btn-secondary" onClick={() => action(`/api/admin/orders/${id}/refund`, 'Order marked refunded')}>Refund</button>
+        <button className="btn-primary" onClick={() => action(`/api/admin/orders/${id}/fulfil`, 'Workflow advanced')}>
+          Fulfil now
+        </button>
+        <button
+          className="btn-secondary"
+          onClick={() => action(`/api/admin/orders/${id}/restart-workflow`, 'Workflow restarted')}
+        >
+          Restart workflow
+        </button>
+        <button className="btn-secondary" onClick={() => action(`/api/admin/orders/${id}/cancel`, 'Order cancelled')}>
+          Cancel
+        </button>
+        <button className="btn-secondary" onClick={() => action(`/api/admin/orders/${id}/refund`, 'Order marked refunded')}>
+          Refund
+        </button>
       </div>
       <section className="card overflow-hidden">
         <div className="p-4 font-semibold border-b border-(--color-border)">Items</div>

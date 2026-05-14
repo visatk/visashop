@@ -13,7 +13,7 @@
 
   "vars": {
     "APP_NAME": "VisaShop",
-    "APP_DESCRIPTION": "Premium digital products: license keys, subscriptions, scripts and tools",
+    "APP_DESCRIPTION": "Premium digital products: license keys, subscriptions, premium scripts and tools",
     "APP_URL": "https://visashop.example.com",
     "APP_CURRENCY": "USD",
     "APIRONE_BASE_URL": "https://apirone.com/api",
@@ -23,7 +23,8 @@
     "R2_ACCOUNT_ID": "",
     "R2_BUCKET_NAME": "visashop-files",
     "MAIL_FROM": "VisaShop <noreply@example.com>",
-    "MAIL_REPLY_TO": "support@example.com"
+    "MAIL_REPLY_TO": "support@example.com",
+    "ORDER_PAYMENT_TIMEOUT": "1 hour"
   },
 
   "d1_databases": [
@@ -45,5 +46,20 @@
       "binding": "KV",
       "id": "00000000000000000000000000000000"
     }
-  ]
+  ],
+  "workflows": [
+    {
+      "name": "visashop-order-lifecycle",
+      "binding": "ORDER_WORKFLOW",
+      "class_name": "OrderLifecycleWorkflow"
+    },
+    {
+      "name": "visashop-d1-backup",
+      "binding": "BACKUP_WORKFLOW",
+      "class_name": "D1BackupWorkflow"
+    }
+  ],
+  "triggers": {
+    "crons": ["0 4 * * *"]
+  }
 }

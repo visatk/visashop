@@ -23,6 +23,7 @@ import AdminUsers from './pages/admin/Users';
 import AdminCoupons from './pages/admin/Coupons';
 import { AdminOrders, AdminOrderDetail } from './pages/admin/Orders';
 import AdminCategories from './pages/admin/Categories';
+import AdminWorkflows from './pages/admin/Workflows';
 
 /**
  *  Auto-scroll-to-top on route change. Avoids the "stuck mid-page"
@@ -69,6 +70,7 @@ export default function App() {
               <Route path="coupons" element={<AdminCoupons />} />
               <Route path="reviews" element={<AdminReviews />} />
               <Route path="users" element={<AdminUsers />} />
+              <Route path="workflows" element={<AdminWorkflows />} />
             </Route>
           </Routes>
         </ToastProvider>
