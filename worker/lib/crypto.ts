@@ -1,10 +1,10 @@
 /**
- *  Web-Crypto helpers usable from the Workers runtime.
+ * Web-Crypto helpers usable from the Workers runtime.
  *
- *  - PBKDF2 password hashing (SHA-256, 210k iterations, salted)
- *  - Constant-time string comparison
- *  - HMAC-SHA-256 signing / verification (for sessions, webhook tokens)
- *  - random hex / id generators
+ * - PBKDF2 password hashing (SHA-256, 210k iterations, salted)
+ * - Constant-time string comparison
+ * - HMAC-SHA-256 signing / verification (for sessions, webhook tokens)
+ * - random hex / id generators
  */
 
 const ENCODER = new TextEncoder();
@@ -13,7 +13,7 @@ const DECODER = new TextDecoder();
 const PBKDF2_ITERATIONS = 210_000;
 const PBKDF2_KEYLEN = 32; // bytes
 
-function bufToB64(buf: ArrayBuffer): string {
+function bufToB64(buf: ArrayBufferLike): string {
   const bytes = new Uint8Array(buf);
   let bin = '';
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -27,7 +27,7 @@ function b64ToBuf(b64: string): Uint8Array {
   return bytes;
 }
 
-export function bufToHex(buf: ArrayBuffer): string {
+export function bufToHex(buf: ArrayBufferLike): string {
   const bytes = new Uint8Array(buf);
   let s = '';
   for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, '0');
@@ -40,7 +40,7 @@ export function hexToBuf(hex: string): Uint8Array {
   return arr;
 }
 
-export function b64UrlEncode(buf: ArrayBuffer): string {
+export function b64UrlEncode(buf: ArrayBufferLike): string {
   return bufToB64(buf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
