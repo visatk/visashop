@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 400" width="100%" height="100%">
+    <defs>
+        <!-- Background Dot Pattern -->
+        <pattern id="dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+            <circle cx="2" cy="2" r="1.5" fill="#CBD5E1" opacity="0.35"/>
+        </pattern>
+
+        <!-- Brand Gradients -->
+        <linearGradient id="gradPink" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#F472B6" />
+            <stop offset="100%" stop-color="#9D174D" />
+        </linearGradient>
+        
+        <linearGradient id="gradTeal" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#2DD4BF" />
+            <stop offset="100%" stop-color="#064E3B" />
+        </linearGradient>
+        
+        <linearGradient id="gradBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#60A5FA" />
+            <stop offset="100%" stop-color="#1E3A8A" />
+        </linearGradient>
+
+        <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#2563EB"/>
+            <stop offset="100%" stop-color="#7C3AED"/>
+        </linearGradient>
+
+        <!-- Soft Drop Shadow -->
+        <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="4" dy="10" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.12" />
+        </filter>
+    </defs>
+
+    <!-- Canvas Background -->
+    <rect width="1000" height="400" fill="#F8FAFC" rx="32"/>
+    <rect width="1000" height="400" fill="url(#dots)" rx="32"/>
+
+    <!-- Geometric Logo Mark -->
+    <g transform="translate(250, 200)">
+        <g transform="rotate(45)">
+            <!-- Bottom Layer (Magenta / Productivity) -->
+            <rect x="-85" y="-35" width="120" height="120" rx="32" 
+                  fill="url(#gradPink)" opacity="0.95" filter="url(#shadow)" 
+                  stroke="rgba(255,255,255,0.3)" stroke-width="1.5" />
+            
+            <!-- Middle Layer (Teal / Communication) -->
+            <rect x="-35" y="-85" width="120" height="120" rx="32" 
+                  fill="url(#gradTeal)" opacity="0.95" filter="url(#shadow)" 
+                  stroke="rgba(255,255,255,0.3)" stroke-width="1.5" />
+            
+            <!-- Top Layer (Blue / Cloud Core) -->
+            <rect x="-60" y="-60" width="120" height="120" rx="32" 
+                  fill="url(#gradBlue)" opacity="0.98" filter="url(#shadow)" 
+                  stroke="rgba(255,255,255,0.4)" stroke-width="2" />
+            
+            <!-- Central Synergy Cutout -->
+            <rect x="-22" y="-22" width="44" height="44" rx="14" fill="#F8FAFC" filter="url(#shadow)" />
+        </g>
+    </g>
+
+    <!-- Typography -->
+    <g transform="translate(430, 0)">
+        <!-- Main Brand Name -->
+        <text x="0" y="215" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" 
+              font-weight="800" font-size="92" fill="#0F172A" letter-spacing="-3">
+            Office <tspan font-weight="300" fill="url(#textGrad)">Pro</tspan>
+        </text>
+
+        <!-- Version Badge & Tagline Row -->
+        <g transform="translate(5, 245)">
+            <!-- 2026 Pill Badge -->
+            <rect x="0" y="-22" width="86" height="32" rx="16" fill="#1E40AF" filter="url(#shadow)" />
+            <text x="43" y="0" font-family="system-ui, -apple-system, sans-serif" 
+                  font-weight="700" font-size="16" fill="#FFFFFF" text-anchor="middle" letter-spacing="1">
+                2026
+            </text>
+
+            <!-- Tagline -->
+            <text x="105" y="0" font-family="system-ui, -apple-system, sans-serif" 
+                  font-weight="600" font-size="15" fill="#475569" letter-spacing="3.5">
+                NEXT-GEN WORKSPACE
+            </text>
+        </g>
+    </g>
+</svg>
