@@ -239,7 +239,7 @@ export default function Layout() {
       {/* Skip link for screen readers / keyboard users */}
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:btn-primary"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:rounded-md focus:bg-(--color-accent) focus:text-(--color-accent-fg) focus:font-semibold focus:shadow-lg"
       >
         Skip to main content
       </a>
