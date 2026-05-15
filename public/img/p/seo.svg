@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 450" width="100%" height="100%">
+    <defs>
+        <!-- Developer Environment Dot Matrix Grid -->
+        <pattern id="dotMatrix" x="0" y="0" width="30" height="30" patternUnits="userSpaceOnUse">
+            <circle cx="2" cy="2" r="1.5" fill="#27272A" opacity="0.6"/>
+        </pattern>
+
+        <!-- Brand Gradients -->
+        <linearGradient id="cliCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#22D3EE" />
+            <stop offset="100%" stop-color="#0284C7" />
+        </linearGradient>
+
+        <linearGradient id="cliGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#34D399" />
+            <stop offset="100%" stop-color="#059669" />
+        </linearGradient>
+        
+        <linearGradient id="auditGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#10B981" />
+            <stop offset="100%" stop-color="#06B6D4" />
+        </linearGradient>
+
+        <!-- Neon Glow Effect for Terminal Output -->
+        <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="8" result="blur1" />
+            <feGaussianBlur stdDeviation="2" result="blur2" />
+            <feMerge>
+                <feMergeNode in="blur1" />
+                <feMergeNode in="blur2" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+
+        <!-- Subtle Depth Shadow -->
+        <filter id="boxShadow" x="-10%" y="-10%" width="120%" height="120%">
+            <feDropShadow dx="0" dy="15" stdDeviation="15" flood-color="#000000" flood-opacity="0.4" />
+        </filter>
+    </defs>
+
+    <!-- Base Canvas -->
+    <rect width="1000" height="450" fill="#09090B" rx="24"/>
+    <rect width="1000" height="450" fill="url(#dotMatrix)" rx="24"/>
+
+    <!-- Left Side: Conceptual Logo Mark -->
+    <g transform="translate(170, 225)">
+        <!-- Magnifying Glass Handle -->
+        <line x1="55" y1="55" x2="110" y2="110" stroke="#27272A" stroke-width="20" stroke-linecap="round" filter="url(#boxShadow)"/>
+        <line x1="55" y1="55" x2="110" y2="110" stroke="#3F3F46" stroke-width="8" stroke-linecap="round"/>
+        
+        <!-- Outer Audit Ring (Crawling) -->
+        <circle cx="0" cy="0" r="85" fill="none" stroke="#27272A" stroke-width="4"/>
+        <path d="M 0 -85 A 85 85 0 0 1 85 0" fill="none" stroke="url(#auditGradient)" stroke-width="6" filter="url(#neonGlow)"/>
+
+        <!-- Inner Terminal Screen / Lens -->
+        <circle cx="0" cy="0" r="70" fill="#000000" stroke="#18181B" stroke-width="4" filter="url(#boxShadow)"/>
+        
+        <!-- Background Terminal Scanline -->
+        <rect x="-50" y="-30" width="100" height="4" fill="#06B6D4" opacity="0.1"/>
+        <rect x="-50" y="-10" width="100" height="4" fill="#06B6D4" opacity="0.1"/>
+        <rect x="-50" y="10" width="100" height="4" fill="#06B6D4" opacity="0.1"/>
+
+        <!-- The CLI Prompt (>_) -->
+        <text x="-40" y="15" font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-weight="800" font-size="46" fill="url(#cliCyan)" filter="url(#neonGlow)">
+            >
+        </text>
+        <text x="0" y="15" font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-weight="900" font-size="46" fill="url(#cliGreen)" filter="url(#neonGlow)">
+            _
+        </text>
+    </g>
+
+    <!-- Right Side: Typography and Data Points -->
+    <g transform="translate(360, 200)">
+        
+        <!-- Main Product Title -->
+        <text font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="72" fill="#FFFFFF" letter-spacing="-2">
+            SEO AUDIT
+        </text>
+
+        <!-- "CLI" Monospace Badge -->
+        <g transform="translate(370, -60)">
+            <rect width="110" height="66" rx="8" fill="#18181B" stroke="url(#auditGradient)" stroke-width="2" filter="url(#boxShadow)"/>
+            <text x="55" y="46" text-anchor="middle" font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-weight="800" font-size="40" fill="url(#cliGreen)">
+                CLI
+            </text>
+        </g>
+        
+        <!-- Subtitle/Description -->
+        <g transform="translate(5, 50)">
+            <text font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-weight="500" font-size="20" fill="#A1A1AA" letter-spacing="4">
+                TECHNICAL SEO TOOL
+            </text>
+        </g>
+
+        <!-- Command Line Example / Features Bar -->
+        <g transform="translate(5, 110)">
+            <!-- Simulated terminal input background -->
+            <rect width="475" height="46" rx="6" fill="#18181B" stroke="#27272A" stroke-width="1"/>
+            
+            <!-- Terminal Output Tags -->
+            <text x="20" y="28" font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-size="14" font-weight="600" fill="#34D399">
+                <tspan fill="#A1A1AA">$</tspan> lighthouse-ci
+            </text>
+            
+            <circle cx="165" cy="23" r="3" fill="#3F3F46"/>
+
+            <text x="185" y="28" font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-size="14" font-weight="600" fill="#22D3EE">
+                <tspan fill="#A1A1AA">--</tspan>core-web-vitals
+            </text>
+
+            <circle cx="355" cy="23" r="3" fill="#3F3F46"/>
+
+            <text x="375" y="28" font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-size="14" font-weight="600" fill="#A855F7">
+                <tspan fill="#A1A1AA">--</tspan>depth=max
+            </text>
+        </g>
+    </g>
+
+    <!-- Top right window controls (Mac OS style, but cyber theme) -->
+    <g transform="translate(40, 40)">
+        <circle cx="0" cy="0" r="6" fill="#3F3F46"/>
+        <circle cx="20" cy="0" r="6" fill="#3F3F46"/>
+        <circle cx="40" cy="0" r="6" fill="#3F3F46"/>
+    </g>
+</svg>
