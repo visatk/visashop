@@ -16,6 +16,13 @@ export interface AppEnv extends Env {
   R2_SECRET_ACCESS_KEY?: string;
   ADMIN_BOOTSTRAP_EMAIL?: string;
   ADMIN_BOOTSTRAP_PASSWORD?: string;
+
+  /* OAuth secrets — set per-provider so missing config disables the
+     button on the login page rather than 500-ing on click. */
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
 }
 
 export interface OrderWorkflowParams {

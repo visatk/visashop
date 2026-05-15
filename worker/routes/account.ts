@@ -28,10 +28,20 @@ export const accountRoutes = new Router()
     if (typeof body.name === 'string') updates.name = body.name.slice(0, 80);
     if (body.password) {
       if (body.password.length < 8) return badRequest('Password must be at least 8 chars');
-      const u = await db.select({ ph: schema.users.passwordHash }).from(schema.users).where(eq(schema.users.id, ctx.user.id)).limit(1).all();
+      const u = await db
+        .select({ ph: schema.users.passwordHash })
+        .from(schema.users)
+        .where(eq(schema.users.id, ctx.user.id))
+        .limit(1)
+        .all();
       if (!u[0]) return forbidden();
-      if (!body.currentPassword || !(await verifyPassword(body.currentPassword, u[0].ph))) {
-        return badRequest('Current password is incorrect');
+      // OAuth-only accounts (passwordHash IS NULL) can set their first
+      // password without supplying a current one. Anyone with an
+      // existing hash must prove they know it.
+      if (u[0].ph) {
+        if (!body.currentPassword || !(await verifyPassword(body.currentPassword, u[0].ph))) {
+          return badRequest('Current password is incorrect');
+        }
       }
       updates.passwordHash = await hashPassword(body.password);
     }

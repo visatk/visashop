@@ -10,7 +10,12 @@ export const users = sqliteTable(
   {
     id: text('id').primaryKey(),
     email: text('email').notNull(),
-    passwordHash: text('password_hash').notNull(),
+    /**
+     *  Nullable to support OAuth-only accounts (GitHub / Google).
+     *  Email/password users always have a hash; OAuth-only users have
+     *  `null` here until they set a password via the reset flow.
+     */
+    passwordHash: text('password_hash'),
     name: text('name'),
     role: text('role', { enum: ['user', 'admin'] }).notNull().default('user'),
     emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
@@ -45,6 +50,33 @@ export const sessions = sqliteTable(
   (t) => ({
     userIdx: index('sessions_user_idx').on(t.userId),
     expIdx: index('sessions_expires_idx').on(t.expiresAt),
+  }),
+);
+
+/**
+ *  Linked third-party identities (Google, GitHub).
+ *
+ *  The (provider, subject) pair uniquely identifies a remote account and is
+ *  what we look up on each callback. A single VisaShop user can link
+ *  multiple providers (e.g. Google + GitHub on the same email).
+ */
+export const oauthAccounts = sqliteTable(
+  'oauth_accounts',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    provider: text('provider', { enum: ['google', 'github'] }).notNull(),
+    subject: text('subject').notNull(),
+    email: text('email'),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => ({
+    providerSubjectIdx: uniqueIndex('oauth_accounts_provider_subject_uq').on(t.provider, t.subject),
+    userIdx: index('oauth_accounts_user_idx').on(t.userId),
   }),
 );
 
@@ -344,3 +376,4 @@ export type NewUser = typeof users.$inferInsert;
 export type Product = typeof products.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
+export type OAuthAccount = typeof oauthAccounts.$inferSelect;

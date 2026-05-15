@@ -308,16 +308,19 @@ export class OrderLifecycleWorkflow extends WorkflowEntrypoint<AppEnv, OrderWork
     /* -------------------------------------------------------------- *
      * 7. Mark fulfilled, increment sales counters, audit, then email.
      * -------------------------------------------------------------- */
-    await step.do('mark-fulfilled', RETRY, async () => {
-      await this.env.DB.prepare(
+    const fulfilment = await step.do('mark-fulfilled', RETRY, async () => {
+      const res = await this.env.DB.prepare(
         `UPDATE orders SET status = 'fulfilled', fulfilled_at = unixepoch(), updated_at = unixepoch()
          WHERE id = ?1 AND status IN ('paid','partial')`,
       )
         .bind(orderId)
         .run();
+      return { firstTime: (res.meta?.changes ?? 0) > 0 };
     });
 
     await step.do('bump-sales', RETRY, async () => {
+      if (!fulfilment.firstTime) return { bumped: 0 };
+      let bumped = 0;
       for (const item of itemIds) {
         if (!item.productId) continue;
         await this.env.DB.prepare(
@@ -325,7 +328,29 @@ export class OrderLifecycleWorkflow extends WorkflowEntrypoint<AppEnv, OrderWork
         )
           .bind(item.productId, item.quantity)
           .run();
+        bumped += 1;
       }
+      return { bumped };
+    });
+
+    /* Bump the coupon's redemption counter once, the first time this
+       order transitions into fulfilled. `firstTime` is only true for
+       the run that actually flipped the status, which makes this
+       step safe to re-execute on workflow retries. */
+    await step.do('bump-coupon-redemptions', RETRY, async () => {
+      if (!fulfilment.firstTime) return { bumped: false };
+      const row = await this.env.DB.prepare(
+        `SELECT coupon_code FROM orders WHERE id = ?1`,
+      )
+        .bind(orderId)
+        .first<{ coupon_code: string | null }>();
+      if (!row?.coupon_code) return { bumped: false };
+      const res = await this.env.DB.prepare(
+        `UPDATE coupons SET redemptions = redemptions + 1 WHERE code = ?1`,
+      )
+        .bind(row.coupon_code)
+        .run();
+      return { bumped: (res.meta?.changes ?? 0) > 0 };
     });
 
     await step.do('audit-fulfilment', RETRY, async () => {

@@ -1,10 +1,32 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Router, badRequest, forbidden, jsonResponse, ok, readJson, unauthorized } from '../lib/http';
 import { hashPassword, verifyPassword, randomId, signToken, verifyToken } from '../lib/crypto';
 import { createSession, destroySession, readCookie, SESSION_COOKIE } from '../lib/auth';
 import { rateLimit } from '../lib/rate-limit';
 import { sendEmail, welcomeEmail, passwordResetEmail } from '../lib/mail';
 import { getDb, schema } from '../db/client';
+import {
+  authorizeUrl,
+  exchangeAndProfile,
+  isOAuthEnabled,
+  signState,
+  verifyState,
+  type OAuthProvider,
+} from '../lib/oauth';
+
+const OAUTH_PROVIDERS: OAuthProvider[] = ['google', 'github'];
+
+function isOAuthProvider(p: string): p is OAuthProvider {
+  return (OAUTH_PROVIDERS as string[]).includes(p);
+}
+
+function safeNext(raw: string | null): string {
+  // Only allow same-origin paths so an attacker can't hijack the
+  // OAuth flow into open-redirecting a victim.
+  if (!raw) return '/account';
+  if (!raw.startsWith('/') || raw.startsWith('//')) return '/account';
+  return raw.slice(0, 256);
+}
 
 export const authRoutes = new Router()
   /* ---------------------------- Register --------------------------------- */
@@ -60,10 +82,9 @@ export const authRoutes = new Router()
     const db = getDb(ctx.env);
     const rows = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1).all();
     const user = rows[0];
-    if (!user) {
-      // Equalise timing to make user-enumeration harder.
-      // Use a real-shaped (but never-matching) hash so verify takes
-      // approximately the same wall-clock time as a real verification.
+    if (!user || !user.passwordHash) {
+      // Equalise timing to make user-enumeration harder. Also covers the
+      // OAuth-only case where the user has no password set yet.
       await verifyPassword(
         body.password ?? '',
         'pbkdf2$sha256$210000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
@@ -109,6 +130,159 @@ export const authRoutes = new Router()
       name: ctx.user.name,
       role: ctx.user.role,
     });
+  })
+  /* ----------------------- OAuth provider discovery ---------------------- */
+  .get('/api/auth/oauth/providers', (ctx) =>
+    ok({
+      google: isOAuthEnabled(ctx.env, 'google'),
+      github: isOAuthEnabled(ctx.env, 'github'),
+    }),
+  )
+  /* ----------------------- OAuth: kick off the dance --------------------- */
+  .get('/api/auth/oauth/:provider/start', async (ctx, params) => {
+    const provider = params.provider;
+    if (!isOAuthProvider(provider)) return badRequest('Unknown provider', 404);
+    if (!isOAuthEnabled(ctx.env, provider)) return badRequest(`${provider} sign-in is not configured`, 503);
+    if (!ctx.env.SESSION_SECRET) return forbidden('Server not configured');
+
+    const state = await signState(ctx.env, {
+      n: randomId(8),
+      next: safeNext(ctx.url.searchParams.get('next')),
+      exp: Math.floor(Date.now() / 1000) + 60 * 5,
+      p: provider,
+    });
+    return Response.redirect(authorizeUrl(ctx.env, provider, state), 302);
+  })
+  /* ----------------------- OAuth: provider callback ---------------------- */
+  .get('/api/auth/oauth/:provider/callback', async (ctx, params) => {
+    const provider = params.provider;
+    if (!isOAuthProvider(provider)) return badRequest('Unknown provider', 404);
+
+    const error = ctx.url.searchParams.get('error');
+    const errorDesc = ctx.url.searchParams.get('error_description');
+    if (error) {
+      const msg = encodeURIComponent(errorDesc ?? error);
+      return Response.redirect(`${ctx.env.APP_URL.replace(/\/$/, '')}/login?oauth_error=${msg}`, 302);
+    }
+
+    const code = ctx.url.searchParams.get('code');
+    const stateRaw = ctx.url.searchParams.get('state');
+    if (!code || !stateRaw) return badRequest('Missing code or state');
+
+    const state = await verifyState(ctx.env, stateRaw);
+    if (!state || state.p !== provider) return badRequest('Invalid or expired state');
+
+    let profile;
+    try {
+      profile = await exchangeAndProfile(ctx.env, provider, code);
+    } catch (err) {
+      console.error('[oauth] exchange failed', provider, err);
+      const msg = encodeURIComponent('We could not complete the sign-in. Please try again.');
+      return Response.redirect(`${ctx.env.APP_URL.replace(/\/$/, '')}/login?oauth_error=${msg}`, 302);
+    }
+
+    if (!profile.email) {
+      const msg = encodeURIComponent('Your provider did not share a verified email. Add a verified email and try again.');
+      return Response.redirect(`${ctx.env.APP_URL.replace(/\/$/, '')}/login?oauth_error=${msg}`, 302);
+    }
+
+    const db = getDb(ctx.env);
+    const email = profile.email.toLowerCase();
+
+    // 1) Already linked? — same provider + subject lands the same user
+    //    every time, even if they later changed their primary email.
+    const linked = await db
+      .select({ userId: schema.oauthAccounts.userId })
+      .from(schema.oauthAccounts)
+      .where(
+        and(eq(schema.oauthAccounts.provider, provider), eq(schema.oauthAccounts.subject, profile.subject)),
+      )
+      .limit(1)
+      .all();
+
+    let userId: string | null = linked[0]?.userId ?? null;
+    let createdAccount = false;
+
+    if (!userId) {
+      // 2) Try matching by verified email so existing email/password users
+      //    can opt into social sign-in seamlessly.
+      if (profile.emailVerified) {
+        const existing = await db
+          .select({ id: schema.users.id })
+          .from(schema.users)
+          .where(eq(schema.users.email, email))
+          .limit(1)
+          .all();
+        if (existing[0]) userId = existing[0].id;
+      }
+
+      // 3) Otherwise create a new user. OAuth-only users have a NULL
+      //    password hash; they can set one later via the password reset
+      //    flow if they want a fallback login.
+      if (!userId) {
+        userId = `usr_${randomId(12)}`;
+        await db.insert(schema.users).values({
+          id: userId,
+          email,
+          passwordHash: null,
+          name: profile.name?.slice(0, 80) ?? null,
+          role: 'user',
+          emailVerified: profile.emailVerified,
+        });
+        createdAccount = true;
+      }
+
+      // Persist the link so subsequent logins go through path (1).
+      try {
+        await db.insert(schema.oauthAccounts).values({
+          id: `oa_${randomId(8)}`,
+          userId,
+          provider,
+          subject: profile.subject,
+          email,
+        });
+      } catch (err) {
+        // Possible UNIQUE conflict from a parallel request — not fatal.
+        console.warn('[oauth] account link insert skipped', err);
+      }
+    }
+
+    // Audit so admins can see the surface area of social logins.
+    ctx.ctx.waitUntil(
+      db
+        .insert(schema.auditLogs)
+        .values({
+          id: `al_${randomId(8)}`,
+          actorId: userId,
+          action: createdAccount ? 'auth.oauth.signup' : 'auth.oauth.login',
+          entityType: 'user',
+          entityId: userId,
+          metadata: JSON.stringify({ provider }),
+          ip: ctx.ip,
+        })
+        .then(() => undefined)
+        .catch(() => undefined),
+    );
+
+    if (createdAccount) {
+      ctx.ctx.waitUntil(
+        sendEmail(ctx.env, {
+          to: email,
+          subject: `Welcome to ${ctx.env.APP_NAME}`,
+          html: welcomeEmail(ctx.env, profile.name ?? ''),
+        }).then(() => undefined),
+      );
+    }
+
+    const session = await createSession(ctx.env, userId, {
+      userAgent: ctx.request.headers.get('user-agent') ?? undefined,
+      ip: ctx.ip,
+      secure: ctx.url.protocol === 'https:',
+    });
+    const headers = new Headers();
+    headers.append('Set-Cookie', session.cookie);
+    headers.set('Location', `${ctx.env.APP_URL.replace(/\/$/, '')}${state.next}`);
+    return new Response(null, { status: 302, headers });
   })
   /* ------------------------ Password reset request ----------------------- */
   .post('/api/auth/password/request', async (ctx) => {
